@@ -1,0 +1,42 @@
+---
+- name: Scan port 80 on remote targets using NMAP
+  hosts: target
+  become: yes
+  vars:
+    targets_file: /tmp/targets.txt
+
+  tasks:
+    - name: Copy targets list from control node to target host
+      copy:
+        src: targets.txt
+        dest: "{{ targets_file }}"
+        mode: '0644'
+
+    - name: Install NMAP package
+      package:
+        name: nmap
+        state: present
+
+    - name: Read contents of targets file
+      slurp:
+        src: "{{ targets_file }}"
+      register: targets_content
+
+    - name: Convert file content into a list of targets
+      set_fact:
+        targets_list: "{{ targets_content['content'] | b64decode | split('\n') | select | map('trim') | list }}"
+
+    - name: Run NMAP scan on each target (port 80 only)
+      command: "nmap -p 80 {{ item }}"
+      register: scan_results
+      loop: "{{ targets_list }}"
+      ignore_errors: yes
+
+    - name: Display scan results for each target
+      debug:
+        msg: |
+          Target: {{ item.item }}
+          Output:
+          {{ item.stdout_lines | to_nice_yaml(indent=2) }}
+      loop: "{{ scan_results.results }}"
+      when: item.stdout is defined
